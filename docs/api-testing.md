@@ -1,29 +1,42 @@
-# Vivliostyle REST API Testing Guide
+# **Vivliostyle REST API Testing Guide**
 
 ## Overview
 
 This document describes how to test the Vivliostyle REST API endpoints and explains the reasoning behind each validation step.
 
-## Prerequisites
+Both `/render/pdf` and `/render/epub` use the **full Vivliostyle pipeline**:
 
-1. Build the project:
+```
+write temp workspace → resolveTaskConfig() → compile() → (PDF | EPUB)
+```
+
+A **single shared Vite server** is started at API boot and is used only to serve the Vivliostyle Viewer UI required for PDF rendering.
+Vite does **not** serve user HTML, and it does **not** run per request.
+
+---
+
+# **Prerequisites**
+
+1. Build:
 
    ```bash
    pnpm build
    ```
 
 2. Start the API server:
+
    ```bash
    pnpm start:api
    # or
    node dist/api-server.js
    ```
 
-## Test Endpoints
+---
 
-### 1. Health Check
+# **1. Health Check**
 
-**Endpoint:** `GET /health`
+**Endpoint:**
+`GET /health`
 
 **Test:**
 
@@ -37,13 +50,15 @@ curl http://localhost:8080/health
 { "status": "ok", "uptime": 123.456 }
 ```
 
-**Why:** Confirms the server is running and responsive. The uptime field helps identify if the server was recently restarted.
+**Why:**
+Verifies the server is running and that the shared Vite server successfully booted during initialization.
 
 ---
 
-### 2. PDF Rendering
+# **2. PDF Rendering**
 
-**Endpoint:** `POST /render/pdf`
+**Endpoint:**
+`POST /render/pdf`
 
 **Test:**
 
@@ -54,51 +69,72 @@ curl -X POST http://localhost:8080/render/pdf \
   -o test.pdf
 ```
 
-**Validation Steps:**
+---
 
-1. **Check file type:**
+## Validate PDF
 
-   ```bash
-   file test.pdf
-   ```
+### **1. Check file type**
 
-   Expected: `test.pdf: PDF document, version 1.7`
+```bash
+file test.pdf
+```
 
-2. **Verify PDF metadata:**
-
-   ```bash
-   pdfinfo test.pdf
-   ```
-
-   Expected output includes:
-
-   - `Title: Test` (from HTML title tag)
-   - `Creator: Vivliostyle`
-   - `Tagged: yes`
-
-3. **Check magic bytes:**
-   ```bash
-   head -c 5 test.pdf
-   ```
-   Expected: `%PDF-`
-
-**Why:**
-
-- `file` command uses magic bytes to identify file type, catching JSON error responses
-- `pdfinfo` validates internal PDF structure and metadata extraction
-- Magic bytes confirm the file wasn't corrupted or truncated
-
-**Common Failure Modes:**
-
-- JSON response instead of PDF = rendering pipeline error
-- Empty file = server crash during rendering
-- Corrupted PDF = Playwright/Chromium issue
+Expected:
+`test.pdf: PDF document`
 
 ---
 
-### 3. EPUB Rendering
+### **2. Verify PDF magic bytes**
 
-**Endpoint:** `POST /render/epub`
+```bash
+head -c 5 test.pdf
+```
+
+Expected:
+
+```
+%PDF-
+```
+
+---
+
+### **3. Inspect metadata (optional)**
+
+```bash
+pdfinfo test.pdf
+```
+
+Expected metadata:
+
+- `Title: Test`
+- `Creator: Vivliostyle`
+- `Tagged: yes`
+
+---
+
+## Why these tests matter
+
+- Ensures Vivliostyle’s **compile → buildPDF → Playwright** pipeline is functioning.
+- Confirms the PDF is not corrupted or replaced by a JSON error response.
+- Validates that HTML `<title>` correctly propagates into PDF metadata.
+
+---
+
+## Common PDF Issues
+
+| Symptom              | Cause                                            |
+| -------------------- | ------------------------------------------------ |
+| JSON instead of PDF  | compile() failed or buildPDF() threw error       |
+| Blank PDF            | invalid HTML or missing `<body>` content         |
+| Slow first render    | Playwright launching Chromium for the first time |
+| PDF missing metadata | missing `<title>` tag                            |
+
+---
+
+# **3. EPUB Rendering**
+
+**Endpoint:**
+`POST /render/epub`
 
 **Test:**
 
@@ -109,61 +145,86 @@ curl -X POST http://localhost:8080/render/epub \
   -o test.epub
 ```
 
-**Validation Steps:**
+---
 
-1. **Check file type:**
+## Validate EPUB
 
-   ```bash
-   file test.epub
-   ```
+### **1. Check file type**
 
-   Expected: `test.epub: EPUB document`
+```bash
+file test.epub
+```
 
-2. **Verify ZIP integrity:**
-
-   ```bash
-   unzip -t test.epub
-   ```
-
-   Expected: `No errors detected in compressed data`
-
-3. **Check EPUB structure:**
-
-   ```bash
-   unzip -l test.epub
-   ```
-
-   Expected files:
-
-   - `mimetype` (must be first, uncompressed)
-   - `META-INF/container.xml`
-   - `EPUB/content.opf`
-   - `EPUB/*.xhtml` (content files)
-
-4. **Verify mimetype placement (EPUB spec requirement):**
-   ```bash
-   hexdump -C test.epub | head -3
-   ```
-   Expected: `mimetype` appears at offset ~30 bytes, containing `application/epub+zip`
-
-**Why:**
-
-- EPUB is a ZIP file with specific structure requirements
-- The `mimetype` file MUST be the first entry and stored uncompressed (EPUB spec)
-- ZIP integrity check catches truncation or corruption
-- Structure check ensures all required EPUB components exist
-
-**Common Failure Modes:**
-
-- JSON response = rendering pipeline error
-- "File is not a zip file" = mimetype not first or compressed
-- Missing container.xml = incomplete EPUB generation
+Expected:
+`test.epub: EPUB document`
 
 ---
 
-### 4. Error Handling
+### **2. Validate ZIP integrity**
 
-**Test invalid request:**
+```bash
+unzip -t test.epub
+```
+
+Expected:
+`No errors detected in compressed data`
+
+---
+
+### **3. Confirm EPUB structure**
+
+```bash
+unzip -l test.epub
+```
+
+Expected entries:
+
+- `mimetype` (must be first and uncompressed)
+- `META-INF/container.xml`
+- `EPUB/content.opf`
+- `EPUB/*.xhtml` (compiled document)
+
+---
+
+### **4. Verify mimetype placement**
+
+```bash
+hexdump -C test.epub | head -3
+```
+
+Expected:
+
+- `mimetype` at the first file in the archive
+- Content: `application/epub+zip`
+
+---
+
+## Why these tests matter
+
+EPUB correctness depends entirely on:
+
+- `compile()` generating valid XHTML + manifest files
+- `buildWebPublication()` assembling them
+- `exportEpub()` producing a compliant archive
+
+If any part fails, readers like Kindle Previewer or iBooks will reject the EPUB.
+
+---
+
+## Common EPUB Issues
+
+| Symptom                  | Cause                                             |
+| ------------------------ | ------------------------------------------------- |
+| “File is not a zip file” | wrong mimetype placement or compressed `mimetype` |
+| Missing container.xml    | compile() did not run or failed                   |
+| Corrupted EPUB           | premature cleanup, server crash                   |
+| JSON response            | validation error or compile failure               |
+
+---
+
+# **4. Error Handling Tests**
+
+### **Missing HTML:**
 
 ```bash
 curl -X POST http://localhost:8080/render/pdf \
@@ -171,7 +232,7 @@ curl -X POST http://localhost:8080/render/pdf \
   -d '{"css":"body{}"}'
 ```
 
-**Expected Response:**
+Expected:
 
 ```json
 {
@@ -182,15 +243,17 @@ curl -X POST http://localhost:8080/render/pdf \
 }
 ```
 
-**Test invalid JSON:**
+---
+
+### **Invalid JSON:**
 
 ```bash
 curl -X POST http://localhost:8080/render/pdf \
   -H 'Content-Type: application/json' \
-  -d 'not json'
+  -d 'not-json'
 ```
 
-**Expected Response:**
+Expected:
 
 ```json
 {
@@ -201,11 +264,17 @@ curl -X POST http://localhost:8080/render/pdf \
 }
 ```
 
-**Why:** Validates that the API returns structured error responses instead of crashing or returning HTML error pages.
+---
+
+### Why test errors?
+
+- Ensures **consistent JSON error envelopes**
+- Prevents HTML stack traces leaking into API responses
+- Confirms Express JSON parsing and custom error middleware are wired correctly
 
 ---
 
-## Full Test Script
+# **5. Full Automated Test Script**
 
 ```bash
 #!/bin/bash
@@ -279,58 +348,66 @@ echo "Results: $PASS passed, $FAIL failed"
 
 ---
 
-## Troubleshooting
+# **6. Architecture Notes (Corrected)**
 
-### "File is not a zip file" for EPUB
+### ✔ Single Shared Vite Server
 
-The EPUB spec requires `mimetype` to be the first file in the archive, stored without compression. If this isn't the case, EPUB readers will reject the file even if the content is valid.
+Vivliostyle uses Vite **only** to serve its static Viewer UI used by Playwright during PDF rendering.
+The user’s HTML/CSS is never served by Vite.
 
-### JSON response instead of binary
+Therefore:
 
-Check the response content:
-
-```bash
-cat test.pdf
-```
-
-If it's JSON with an `error` field, the rendering failed. Common causes:
-
-- Absolute paths in entry config (must be relative)
-- Vite server not started for the workspace
-- HTML parsing errors
-
-### PDF renders but is blank
-
-Check if the HTML is valid and contains visible content. Vivliostyle requires proper HTML structure.
-
-### Timeout errors
-
-PDF rendering uses Playwright/Chromium which can be slow on first run (downloading browser). Default timeout is 5 minutes. For complex documents, rendering may take longer.
+- **One Vite server per API process**
+- **No per-request Vite servers**
+- **No dynamic ports**
+- **No Vite → workspace coupling**
 
 ---
 
-## Architecture Notes
+### ✔ Per-Request Temp Workspaces
 
-### Why Per-Request Vite Servers?
+Each render request receives its own workspace:
 
-Each render request creates its own Vite server because:
+- input files (`index.html`, `styles.css`)
+- compile output (`.vs-out/`)
+- generated metadata
+- EPUB/PDF artifacts
 
-1. **Workspace isolation**: Each request writes HTML/CSS to a temp directory. Vite must serve from that specific directory.
+Workspaces are deleted after each request.
 
-2. **Path resolution**: Vivliostyle's config resolver calculates paths relative to the Vite server's root. A shared server with a different root would produce incorrect paths.
+---
 
-3. **Cleanup**: Per-request servers are cleaned up with the temp workspace, preventing resource leaks.
+### ✔ Relative Paths Required
 
-The trade-off is ~1-2 second overhead per request for Vite startup. For production, consider request queuing or warm server pools.
+Vivliostyle treats absolute paths as URLs.
+Always use workspace-relative paths:
 
-### Why Relative Paths in Entry Config?
+Correct:
 
-Vivliostyle treats paths starting with `/` as URIs (HTTP resources), not file paths. This is by design for supporting remote content. Local files must use relative paths:
-
-```typescript
-// Wrong - treated as URI, fetched via HTTP
-entry: [{ path: '/tmp/workspace/index.html' }];
-
-// Correct - resolved as local file
-entry: [{ path: 'index.html' }]; // relative to workspaceDir
+```ts
+entry: [{ path: 'index.html' }];
 ```
+
+Incorrect:
+
+```ts
+entry: [{ path: '/tmp/foo/index.html' }];
+```
+
+---
+
+### ✔ Correct Rendering Pipelines
+
+#### PDF
+
+```
+write → resolveTaskConfig → compile → buildPDF (uses Viewer via Vite)
+```
+
+#### EPUB
+
+```
+write → resolveTaskConfig → compile → buildWebPublication → exportEpub
+```
+
+---
