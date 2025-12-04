@@ -238,12 +238,9 @@ async function buildConfigDocs(): Promise<string> {
 async function buildApiDocs() {
   const [tmp, removeTmpDir] = await useTmpDirectory();
   const execAsync = promisify(exec);
-  const { stderr } = await execAsync(
-    `npx typedoc --logLevel Error --out ${tmp} --json ${path.join(tmp, 'api.json')}`,
+  await execAsync(
+    `pnpm exec typedoc --logLevel Error --out ${tmp} --json ${path.join(tmp, 'api.json')}`,
   );
-  if (stderr) {
-    throw new Error(stderr);
-  }
 
   const json = JSON.parse(
     fs.readFileSync(path.join(tmp, 'api.json'), 'utf-8'),

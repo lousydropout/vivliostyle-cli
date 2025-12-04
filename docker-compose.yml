@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  vivliostyle-worker:
+    build: .
+    ports:
+      - '8080:8080'
+    environment:
+      - PORT=8080
+      - JSON_LIMIT=50mb
+      - NODE_ENV=production
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8080/health']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

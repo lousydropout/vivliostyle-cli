@@ -76,5 +76,12 @@ RUN pnpm install --prod --ignore-scripts \
   && ln -s /opt/vivliostyle-cli/node_modules/.bin/vfm /usr/local/bin/vfm
 COPY --from=builder /opt/vivliostyle-cli/dist/ /opt/vivliostyle-cli/dist/
 
+# API server mode (default for container)
+ENV PORT=8080
+EXPOSE 8080
+
 WORKDIR /data
-ENTRYPOINT [ "vivliostyle" ]
+
+# Default to API server
+# CLI available via: docker run --entrypoint vivliostyle <image> args
+CMD ["node", "/opt/vivliostyle-cli/dist/api-server.js"]
