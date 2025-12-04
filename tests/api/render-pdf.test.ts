@@ -1,15 +1,26 @@
 import { describe, it, expect } from 'vitest';
-
-// Note: Full PDF integration tests require Playwright/Chromium setup.
-// These document the expected behavior for future implementation.
+import request from 'supertest';
+import { app } from '../../src/api-server.js';
 
 describe('POST /render/pdf', () => {
-  it.skip('renders simple HTML to PDF', async () => {
-    // TODO: Implement with supertest once server setup is complete
-    // Requires Playwright Chromium to be installed
-  });
+  it('renders simple HTML to PDF', async () => {
+    const res = await request(app)
+      .post('/render/pdf')
+      .send({
+        html: '<html><head><title>Test</title></head><body><h1>Test</h1></body></html>',
+        metadata: { title: 'Test Document' },
+      });
 
-  it.skip('returns error for missing html', async () => {
-    // TODO: Implement validation error test
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    // PDF magic bytes: %PDF-
+    expect(res.body.slice(0, 5).toString()).toBe('%PDF-');
+  }, 60000); // 60s timeout for Playwright
+
+  it('returns error for missing html', async () => {
+    const res = await request(app).post('/render/pdf').send({ css: 'body {}' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.type).toBe('INVALID_INPUT');
   });
 });
