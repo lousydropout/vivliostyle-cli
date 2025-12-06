@@ -3,6 +3,7 @@ import { RenderError, ApiError } from './api/errors.js';
 import { Logger } from './logger.js';
 import { renderPdf } from './api/handlers/render-pdf.js';
 import { renderEpub } from './api/handlers/render-epub.js';
+import { renderEpubPackage } from './api/handlers/render-epub-package.js';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || '8080', 10);
@@ -25,6 +26,7 @@ app.get('/health', (_req: Request, res: Response) => {
 // to serve files from the request's temp workspace
 app.post('/render/pdf', renderPdf);
 app.post('/render/epub', renderEpub);
+app.post('/render/epub-package', renderEpubPackage);
 
 // Error handling middleware
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
