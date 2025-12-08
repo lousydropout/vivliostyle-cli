@@ -3,6 +3,8 @@ import { RenderError } from '../errors.js';
 export interface EpubPackageFile {
   name: string;
   content: string;
+  /** If true, content is base64-encoded binary data (e.g., images) */
+  isBase64?: boolean;
 }
 
 export interface EpubPackageMetadata {

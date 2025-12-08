@@ -55,8 +55,17 @@ export async function renderEpubPackage(
         fs.mkdirSync(dirPath, { recursive: true });
       }
 
-      fs.writeFileSync(filePath, file.content, 'utf8');
-      Logger.debug(`Wrote file: ${file.name}`);
+      // Handle base64-encoded binary files (e.g., cover images)
+      if (file.isBase64) {
+        const binaryData = Buffer.from(file.content, 'base64');
+        fs.writeFileSync(filePath, binaryData);
+        Logger.debug(
+          `Wrote binary file: ${file.name} (${binaryData.length} bytes)`,
+        );
+      } else {
+        fs.writeFileSync(filePath, file.content, 'utf8');
+        Logger.debug(`Wrote file: ${file.name}`);
+      }
     }
 
     // Step 2: Create META-INF directory and container.xml
